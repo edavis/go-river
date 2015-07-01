@@ -118,6 +118,9 @@ func parseFeed(obj FetchResult) Feed {
 			}
 		}
 	}
+	if feed.Title == "" {
+		feed.Title = "Untitled"
+	}
 	return feed
 }
 
