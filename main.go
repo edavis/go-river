@@ -137,7 +137,7 @@ func buildRiver(c chan FetchResult) {
 		river.Metadata["whenLocal"] = time.Now().Format(localTimestampFmt)
 
 		var feed = parseFeed(obj)
-		logger.Printf("updating %q", feed.Title)
+		logger.Printf("Updating: %v", feed.Title)
 
 		river.UpdatedFeeds.UpdatedFeed = append(river.UpdatedFeeds.UpdatedFeed, feed)
 		writer.Write([]byte("onGetRiverStream("))
