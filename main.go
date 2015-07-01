@@ -58,7 +58,15 @@ type River struct {
 }
 
 func fetchFeed(url string, results chan FetchResult) {
-	resp, _ := http.Get(url)
+	resp, err := http.Get(url)
+	if err != nil {
+		logger.Fatal(err)
+		return
+	}
+	if resp.StatusCode == 404 {
+		logger.Printf("%q returned 404", url)
+		return
+	}
 	var decoder = xml.NewDecoder(resp.Body)
 	decoder.CharsetReader = charset.NewReader // Needed for non-UTF-8 encoded feeds.
 	results <- FetchResult{decoder, url}
