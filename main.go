@@ -76,8 +76,18 @@ func clean(s string) string {
 	s = sanitize.HTML(s)
 	s = strings.Trim(s, " ")
 	if len(s) > characterCount {
-		// non-breaking space and ellipsis
-		return s[:characterCount] + "\u00a0\u2026"
+		i := characterCount-1
+		c := string(s[i])
+		for c != " " {
+			i--
+			c = string(s[i])
+		}
+		switch v := string(s[i-1]); v {
+		case ".", ",":
+			return s[:i-1] + "\u2026"
+		default:
+			return s[:i] + "\u2026"
+		}
 	}
 	return s
 }
