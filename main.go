@@ -18,7 +18,7 @@ import (
 const (
 	utcTimestampFmt   = "Mon, 02 Jan 2006 15:04:05" + " GMT"
 	localTimestampFmt = "Mon, 02 Jan 2006 15:04:05 MST"
-	maxFeedItems      = 10
+	maxFeedItems      = 5
 )
 
 var (
@@ -84,7 +84,7 @@ func parseFeed(obj FetchResult) Feed {
 				feed.Website = rss.Website()
 				feed.Description = rss.Description
 				for idx, item := range rss.Items {
-					if idx > maxFeedItems {
+					if idx > maxFeedItems - 1 {
 						break
 					}
 					title, body := item.River()
