@@ -76,7 +76,7 @@ func clean(s string) string {
 	s = sanitize.HTML(s)
 	s = strings.Trim(s, " ")
 	if len(s) > characterCount {
-		i := characterCount-1
+		i := characterCount - 1
 		c := string(s[i])
 		for c != " " {
 			i--
