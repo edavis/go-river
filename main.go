@@ -95,7 +95,7 @@ func parseFeed(obj FetchResult) Feed {
 				feed.Website = rss.Website()
 				feed.Description = rss.Description
 				for idx, item := range rss.Items {
-					if idx > maxFeedItems - 1 {
+					if idx > maxFeedItems-1 {
 						break
 					}
 					title, body := item.River()
