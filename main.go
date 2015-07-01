@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"code.google.com/p/go-charset/charset"
@@ -18,6 +19,7 @@ const (
 	utcTimestampFmt   = "Mon, 02 Jan 2006 15:04:05" + " GMT"
 	localTimestampFmt = "Mon, 02 Jan 2006 15:04:05 MST"
 	maxFeedItems      = 5
+	characterCount    = 280
 )
 
 var (
@@ -62,6 +64,16 @@ func fetchFeed(url string, results chan FetchResult) {
 	results <- FetchResult{decoder, url}
 }
 
+func clean(s string) string {
+	s = sanitize.HTML(s)
+	s = strings.Trim(s, " ")
+	if len(s) > characterCount {
+		// non-breaking space and ellipsis
+		return s[:characterCount] + "\u00a0\u2026"
+	}
+	return s
+}
+
 func parseFeed(obj FetchResult) Feed {
 	var feed = Feed{
 		Title:      "Untitled",
@@ -88,8 +100,8 @@ func parseFeed(obj FetchResult) Feed {
 					}
 					title, body := item.River()
 					feed.Items = append(feed.Items, FeedItem{
-						Title:     sanitize.HTML(title),
-						Body:      sanitize.HTML(body),
+						Title:     clean(title),
+						Body:      clean(body),
 						Link:      item.Link,
 						Permalink: item.Permalink,
 						PubDate:   item.Timestamp(),
