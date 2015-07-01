@@ -1,8 +1,9 @@
 package main
 
 import (
-	_ "encoding/json"
+	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -13,16 +14,32 @@ import (
 )
 
 const (
-	timestampFmt = "Mon, 02 Jan 2006 15:04:05 GMT"
+	utcTimestampFmt   = "Mon, 02 Jan 2006 15:04:05" + " GMT"
+	localTimestampFmt = "Mon, 02 Jan 2006 15:04:05 MST"
+	maxFeedItems      = 10
+)
+
+var (
+	logger  = log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds)
+	counter = make(chan uint)
 )
 
 type Feed struct {
-	Title       string
-	URL         string
-	Website     string
-	Description string
-	LastUpdate  string
-	Type        string
+	URL         string     `json:"feedUrl"`
+	Website     string     `json:"websiteUrl"`
+	Title       string     `json:"feedTitle"`
+	Description string     `json:"feedDescription"`
+	LastUpdate  string     `json:"whenLastUpdate"`
+	Items       []FeedItem `json:"item"`
+}
+
+type FeedItem struct {
+	Body      string `json:"body"`
+	Permalink string `json:"permaLink"`
+	PubDate   string `json:"pubDate"`
+	Title     string `json:"title"`
+	Link      string `json:"link"`
+	Id        string `json:"id"`
 }
 
 type FetchResult struct {
@@ -30,12 +47,17 @@ type FetchResult struct {
 	URL     string
 }
 
-var logger = log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds)
+type River struct {
+	UpdatedFeeds struct {
+		UpdatedFeed []Feed `json:"updatedFeed"`
+	} `json:"updatedFeeds"`
+	Metadata map[string]string `json:"metadata"`
+}
 
 func fetchFeed(url string, results chan FetchResult) {
 	resp, _ := http.Get(url)
 	var decoder = xml.NewDecoder(resp.Body)
-	decoder.CharsetReader = charset.NewReader
+	decoder.CharsetReader = charset.NewReader // Needed for non-UTF-8 encoded feeds.
 	results <- FetchResult{decoder, url}
 }
 
@@ -44,7 +66,7 @@ func parseFeed(obj FetchResult) Feed {
 		Title:      "Untitled",
 		Website:    "http://example.com/",
 		URL:        obj.URL,
-		LastUpdate: time.Now().UTC().Format(timestampFmt),
+		LastUpdate: time.Now().UTC().Format(utcTimestampFmt),
 	}
 	for {
 		t, _ := obj.Content.Token()
@@ -57,26 +79,28 @@ func parseFeed(obj FetchResult) Feed {
 				var rss = RSS{}
 				obj.Content.DecodeElement(&rss, &e)
 				feed.Title = rss.Title
-				// Use the first non-empty link
-				for _, link := range rss.Link {
-					if link != "" {
-						feed.Website = link
+				feed.Website = rss.Website()
+				feed.Description = rss.Description
+				for idx, item := range rss.Items {
+					if idx > maxFeedItems {
 						break
 					}
+					title, body := item.River()
+					feed.Items = append(feed.Items, FeedItem{
+						Title:     title,
+						Body:      body,
+						Link:      item.Link,
+						Permalink: item.Permalink,
+						PubDate:   item.Timestamp(),
+						Id:        fmt.Sprintf("%07d", <-counter),
+					})
 				}
-				feed.Description = rss.Description
-				feed.Type = "rss"
 			case "feed":
 				var atom = Atom{}
 				obj.Content.DecodeElement(&atom, &e)
 				feed.Title = atom.Title
-				for _, link := range atom.Link {
-					if link.Type == "text/html" {
-						feed.Website = link.Href
-					}
-				}
+				feed.Website = atom.Website()
 				feed.Description = atom.Description
-				feed.Type = "atom"
 			}
 		}
 	}
@@ -84,15 +108,42 @@ func parseFeed(obj FetchResult) Feed {
 }
 
 func buildRiver(c chan FetchResult) {
+	var river = River{
+		Metadata: map[string]string{
+			"docs":    "http://riverjs.org",
+			"version": "3",
+		},
+	}
 	for obj := range c {
+		writer, _ := os.Create("river.js")
+		var encoder = json.NewEncoder(writer)
+
+		// Update the timestamps
+		river.Metadata["whenGMT"] = time.Now().UTC().Format(utcTimestampFmt)
+		river.Metadata["whenLocal"] = time.Now().Format(localTimestampFmt)
+
 		var feed = parseFeed(obj)
-		logger.Printf("%#v", feed)
+		logger.Printf("updating %q", feed.Title)
+
+		river.UpdatedFeeds.UpdatedFeed = append(river.UpdatedFeeds.UpdatedFeed, feed)
+		writer.Write([]byte("onGetRiverStream("))
+		encoder.Encode(river)
+		writer.Write([]byte(")"))
+		writer.Sync()
 	}
 }
 
 func main() {
 	var results = make(chan FetchResult)
 	go buildRiver(results)
+
+	go func() {
+		var c uint = 1
+		for {
+			counter <- c
+			c += 1
+		}
+	}()
 
 	for {
 		for _, url := range feeds {
