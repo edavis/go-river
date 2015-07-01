@@ -9,10 +9,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/kennygrant/sanitize"
-
 	"code.google.com/p/go-charset/charset"
 	_ "code.google.com/p/go-charset/data"
+	"github.com/kennygrant/sanitize"
 )
 
 const (
