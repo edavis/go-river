@@ -80,6 +80,7 @@ func parseFeed(obj FetchResult) Feed {
 		Website:    "http://example.com/",
 		URL:        obj.URL,
 		LastUpdate: time.Now().UTC().Format(utcTimestampFmt),
+		Items:      []FeedItem{},
 	}
 	for {
 		t, _ := obj.Content.Token()
