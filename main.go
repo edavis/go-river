@@ -169,7 +169,7 @@ func buildRiver(c chan FetchResult) {
 }
 
 func main() {
-	var results = make(chan FetchResult)
+	results := make(chan FetchResult)
 	go buildRiver(results)
 
 	go func() {
