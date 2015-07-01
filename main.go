@@ -9,6 +9,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/kennygrant/sanitize"
+
 	"code.google.com/p/go-charset/charset"
 	_ "code.google.com/p/go-charset/data"
 )
@@ -87,8 +89,8 @@ func parseFeed(obj FetchResult) Feed {
 					}
 					title, body := item.River()
 					feed.Items = append(feed.Items, FeedItem{
-						Title:     title,
-						Body:      body,
+						Title:     sanitize.HTML(title),
+						Body:      sanitize.HTML(body),
 						Link:      item.Link,
 						Permalink: item.Permalink,
 						PubDate:   item.Timestamp(),
