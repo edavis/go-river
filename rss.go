@@ -54,7 +54,7 @@ func (self RSSItem) Timestamp() string {
 			continue
 		}
 	}
-	return s
+	return time.Now().UTC().Format(utcTimestampFmt)
 }
 
 func (self RSSItem) River() (string, string) {
