@@ -22,6 +22,7 @@ const (
 	localTimestampFmt = "Mon, 02 Jan 2006 15:04:05 MST"
 	maxFeedItems      = 5
 	characterCount    = 280
+	pollInterval      = time.Hour
 )
 
 var (
@@ -70,7 +71,7 @@ func (self *FeedFetcher) Run(results chan FetchResult) {
 	for {
 		select {
 		case <-self.Delay:
-			self.Ticker = time.Tick(time.Minute)
+			self.Ticker = time.Tick(pollInterval)
 			fetchFeed(self.URL, results)
 		case <-self.Ticker:
 			fetchFeed(self.URL, results)
@@ -223,9 +224,8 @@ func main() {
 	for _, url := range feedsActive {
 		wg.Add(1)
 
-		delayDuration := time.Second * time.Duration(rand.Intn(60))
-		tickerDuration := time.Minute
-		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, tickerDuration)
+		delayDuration := time.Minute * time.Duration(rand.Intn(60+1))
+		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, pollInterval)
 
 		fetcher := &FeedFetcher{
 			Delay: time.After(delayDuration),
