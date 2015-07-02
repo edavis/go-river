@@ -255,7 +255,9 @@ func main() {
 
 	flag.Parse()
 	for _, list := range flag.Args() {
-		config := FeedConfig{}
+		config := FeedConfig{
+			Output: "river.js",
+		}
 		data, err := ioutil.ReadFile(list)
 		if err != nil {
 			logger.Fatal("couldn't ready feed list: %v", err)
