@@ -55,6 +55,7 @@ type FeedItem struct {
 type FetchResult struct {
 	Content *xml.Decoder
 	URL     string
+	Output  string
 }
 
 type River struct {
@@ -68,6 +69,7 @@ type FeedFetcher struct {
 	Ticker <-chan time.Time
 	Delay  <-chan time.Time
 	URL    string
+	Output string
 }
 
 func (self *FeedFetcher) Run(results chan FetchResult) {
@@ -75,14 +77,14 @@ func (self *FeedFetcher) Run(results chan FetchResult) {
 		select {
 		case <-self.Delay:
 			self.Ticker = time.Tick(pollInterval)
-			fetchFeed(self.URL, results)
+			fetchFeed(self.URL, results, self.Output)
 		case <-self.Ticker:
-			fetchFeed(self.URL, results)
+			fetchFeed(self.URL, results, self.Output)
 		}
 	}
 }
 
-func fetchFeed(url string, results chan FetchResult) {
+func fetchFeed(url string, results chan FetchResult, output string) {
 	resp, err := http.Get(url)
 	if err != nil {
 		logger.Printf("http.Get error: %v", err)
@@ -94,12 +96,13 @@ func fetchFeed(url string, results chan FetchResult) {
 	}
 	var decoder = xml.NewDecoder(resp.Body)
 	decoder.CharsetReader = charset.NewReader // Needed for non-UTF-8 encoded feeds.
-	results <- FetchResult{decoder, url}
+	results <- FetchResult{decoder, url, output}
 }
 
 func clean(s string) string {
 	s = sanitize.HTML(s)
 	s = strings.Trim(s, " ")
+	const ellipsis = "\u2026"
 	if len(s) > characterCount {
 		i := characterCount - 1
 		c := string(s[i])
@@ -109,9 +112,9 @@ func clean(s string) string {
 		}
 		switch string(s[i-1]) {
 		case ".", ",":
-			return s[:i-1] + "\u2026"
+			return s[:i-1] + ellipsis
 		default:
-			return s[:i] + "\u2026"
+			return s[:i] + ellipsis
 		}
 	}
 	return s
@@ -213,7 +216,7 @@ func buildRiver(c chan FetchResult) {
 
 		logger.Printf("Updating: %v with %v new items", feed.Title, len(feed.Items))
 
-		writer, _ := os.Create("river.js")
+		writer, _ := os.Create(obj.Output)
 		encoder := json.NewEncoder(writer)
 
 		// Update the timestamps
@@ -230,7 +233,8 @@ func buildRiver(c chan FetchResult) {
 }
 
 type FeedConfig struct {
-	Feeds []string
+	Output string
+	Feeds  []string
 }
 
 func main() {
@@ -251,22 +255,23 @@ func main() {
 
 	flag.Parse()
 	for _, list := range flag.Args() {
-		f := FeedConfig{}
+		config := FeedConfig{}
 		data, err := ioutil.ReadFile(list)
 		if err != nil {
 			logger.Fatal("couldn't ready feed list: %v", err)
 		}
-		yaml.Unmarshal(data, &f)
+		yaml.Unmarshal(data, &config)
 
-		for _, url := range f.Feeds {
+		for _, url := range config.Feeds {
 			wg.Add(1)
 
 			delayDuration := time.Minute * time.Duration(rand.Intn(60))
 			logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, pollInterval)
 
 			fetcher := &FeedFetcher{
-				Delay: time.After(delayDuration),
-				URL:   url,
+				Delay:  time.After(delayDuration),
+				URL:    url,
+				Output: config.Output,
 			}
 			go fetcher.Run(results)
 		}
