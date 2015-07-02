@@ -76,8 +76,8 @@ func (self RSSItem) Guid() string {
 		return self.Permalink
 	} else {
 		h := sha1.New()
-		h.Sum([]byte(self.Title))
-		h.Sum([]byte(self.Link))
+		h.Write([]byte(self.Title))
+		h.Write([]byte(self.Link))
 		return fmt.Sprintf("%x", h.Sum(nil))
 	}
 }
