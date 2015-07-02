@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha1"
 	"encoding/xml"
+	"fmt"
 	"time"
 )
 
@@ -66,5 +68,16 @@ func (self RSSItem) River() (string, string) {
 		return self.Title, ""
 	} else {
 		return "", ""
+	}
+}
+
+func (self RSSItem) Guid() string {
+	if self.Permalink != "" {
+		return self.Permalink
+	} else {
+		h := sha1.New()
+		h.Sum([]byte(self.Title))
+		h.Sum([]byte(self.Link))
+		return fmt.Sprintf("%x", h.Sum(nil))
 	}
 }

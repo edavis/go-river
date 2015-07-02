@@ -27,6 +27,7 @@ const (
 var (
 	logger  = log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds)
 	counter = make(chan uint)
+	history = make(map[string]bool)
 )
 
 type Feed struct {
@@ -60,17 +61,18 @@ type River struct {
 }
 
 type FeedFetcher struct {
-	Ticker *time.Ticker
+	Ticker <-chan time.Time
 	Delay  <-chan time.Time
 	URL    string
 }
 
-func (self FeedFetcher) Run(results chan FetchResult) {
+func (self *FeedFetcher) Run(results chan FetchResult) {
 	for {
 		select {
-		case <-self.Ticker.C:
-			fetchFeed(self.URL, results)
 		case <-self.Delay:
+			self.Ticker = time.Tick(time.Minute)
+			fetchFeed(self.URL, results)
+		case <-self.Ticker:
 			fetchFeed(self.URL, results)
 		}
 	}
@@ -136,7 +138,15 @@ func parseFeed(obj FetchResult) Feed {
 					if idx > maxFeedItems-1 {
 						break
 					}
+
+					// Check if we've seen this item before
+					if found := history[item.Guid()]; found {
+						break
+					}
+
+					history[item.Guid()] = true
 					title, body := item.River()
+
 					feed.Items = append(feed.Items, FeedItem{
 						Title:     clean(title),
 						Body:      clean(body),
@@ -169,17 +179,24 @@ func buildRiver(c chan FetchResult) {
 		},
 	}
 	for obj := range c {
+		feed := parseFeed(obj)
+
+		if len(feed.Items) == 0 {
+			logger.Printf("%q had no new items", obj.URL)
+			continue
+		}
+
+		logger.Printf("Updating: %v with %v new items", feed.Title, len(feed.Items))
+
 		writer, _ := os.Create("river.js")
-		var encoder = json.NewEncoder(writer)
+		encoder := json.NewEncoder(writer)
 
 		// Update the timestamps
 		river.Metadata["whenGMT"] = time.Now().UTC().Format(utcTimestampFmt)
 		river.Metadata["whenLocal"] = time.Now().Format(localTimestampFmt)
 
-		var feed = parseFeed(obj)
-		logger.Printf("Updating: %v", feed.Title)
+		river.UpdatedFeeds.UpdatedFeed = append([]Feed{feed}, river.UpdatedFeeds.UpdatedFeed...)
 
-		river.UpdatedFeeds.UpdatedFeed = append(river.UpdatedFeeds.UpdatedFeed, feed)
 		writer.Write([]byte("onGetRiverStream("))
 		encoder.Encode(river)
 		writer.Write([]byte(")"))
@@ -203,17 +220,16 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	for _, url := range feeds {
+	for _, url := range feedsActive {
 		wg.Add(1)
 
 		delayDuration := time.Second * time.Duration(rand.Intn(60))
-		tickerDuration := time.Minute * 5
+		tickerDuration := time.Minute
 		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, tickerDuration)
 
-		fetcher := FeedFetcher{
-			Ticker: time.NewTicker(tickerDuration),
-			Delay:  time.After(delayDuration),
-			URL:    url,
+		fetcher := &FeedFetcher{
+			Delay: time.After(delayDuration),
+			URL:   url,
 		}
 		go fetcher.Run(results)
 	}
