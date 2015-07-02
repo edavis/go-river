@@ -5,9 +5,11 @@ import (
 	"encoding/xml"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"code.google.com/p/go-charset/charset"
@@ -55,6 +57,23 @@ type River struct {
 		UpdatedFeed []Feed `json:"updatedFeed"`
 	} `json:"updatedFeeds"`
 	Metadata map[string]string `json:"metadata"`
+}
+
+type FeedFetcher struct {
+	Ticker *time.Ticker
+	Delay  <-chan time.Time
+	URL    string
+}
+
+func (self FeedFetcher) Run(results chan FetchResult) {
+	for {
+		select {
+		case <-self.Ticker.C:
+			fetchFeed(self.URL, results)
+		case <-self.Delay:
+			fetchFeed(self.URL, results)
+		}
+	}
 }
 
 func fetchFeed(url string, results chan FetchResult) {
@@ -169,7 +188,9 @@ func buildRiver(c chan FetchResult) {
 }
 
 func main() {
+	var wg sync.WaitGroup
 	results := make(chan FetchResult)
+
 	go buildRiver(results)
 
 	go func() {
@@ -180,10 +201,22 @@ func main() {
 		}
 	}()
 
-	for {
-		for _, url := range feeds {
-			go fetchFeed(url, results)
+	rand.Seed(time.Now().UnixNano())
+
+	for _, url := range feeds {
+		wg.Add(1)
+
+		delayDuration := time.Second * time.Duration(rand.Intn(60))
+		tickerDuration := time.Minute * 5
+		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, tickerDuration)
+
+		fetcher := FeedFetcher{
+			Ticker: time.NewTicker(tickerDuration),
+			Delay:  time.After(delayDuration),
+			URL:    url,
 		}
-		time.Sleep(time.Minute * 15)
+		go fetcher.Run(results)
 	}
+
+	wg.Wait()
 }
