@@ -48,6 +48,7 @@ func (self RSSItem) Timestamp() string {
 			"Mon, 02 Jan 2006 15:04:05 MST",
 			"Mon, 02 Jan 2006 15:04:05 -0700",
 			"2006-01-02T15:04:05-07:00",
+			"2006-01-02T15:04:05-0700",
 		}
 		for _, format := range formats {
 			if parsed, err := time.Parse(format, s); err == nil {
