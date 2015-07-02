@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"encoding/xml"
+	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -15,6 +17,7 @@ import (
 	"code.google.com/p/go-charset/charset"
 	_ "code.google.com/p/go-charset/data"
 	"github.com/kennygrant/sanitize"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -226,9 +229,15 @@ func buildRiver(c chan FetchResult) {
 	}
 }
 
+type FeedConfig struct {
+	Feeds []string
+}
+
 func main() {
 	var wg sync.WaitGroup
 	results := make(chan FetchResult)
+
+	rand.Seed(time.Now().UnixNano())
 
 	go buildRiver(results)
 
@@ -240,19 +249,27 @@ func main() {
 		}
 	}()
 
-	rand.Seed(time.Now().UnixNano())
-
-	for _, url := range feedsActive {
-		wg.Add(1)
-
-		delayDuration := time.Minute * time.Duration(rand.Intn(60))
-		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, pollInterval)
-
-		fetcher := &FeedFetcher{
-			Delay: time.After(delayDuration),
-			URL:   url,
+	flag.Parse()
+	for _, list := range flag.Args() {
+		f := FeedConfig{}
+		data, err := ioutil.ReadFile(list)
+		if err != nil {
+			logger.Fatal("couldn't ready feed list: %v", err)
 		}
-		go fetcher.Run(results)
+		yaml.Unmarshal(data, &f)
+
+		for _, url := range f.Feeds {
+			wg.Add(1)
+
+			delayDuration := time.Minute * time.Duration(rand.Intn(60))
+			logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, pollInterval)
+
+			fetcher := &FeedFetcher{
+				Delay: time.After(delayDuration),
+				URL:   url,
+			}
+			go fetcher.Run(results)
+		}
 	}
 
 	wg.Wait()
