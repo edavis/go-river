@@ -163,6 +163,27 @@ func parseFeed(obj FetchResult) Feed {
 				feed.Title = atom.Title
 				feed.Website = atom.Website()
 				feed.Description = atom.Description
+				for idx, item := range atom.Items {
+					if idx > maxFeedItems-1 {
+						break
+					}
+
+					if found := history[item.Guid()]; found {
+						break
+					}
+
+					history[item.Guid()] = true
+					title, body := item.River()
+
+					feed.Items = append(feed.Items, FeedItem{
+						Title:     clean(title),
+						Body:      clean(body),
+						Link:      item.WebLink(),
+						Permalink: item.Id,
+						PubDate:   item.Timestamp(),
+						Id:        fmt.Sprintf("%07d", <-counter),
+					})
+				}
 			}
 		}
 	}
@@ -224,7 +245,7 @@ func main() {
 	for _, url := range feedsActive {
 		wg.Add(1)
 
-		delayDuration := time.Minute * time.Duration(rand.Intn(60+1))
+		delayDuration := time.Minute * time.Duration(rand.Intn(60))
 		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, pollInterval)
 
 		fetcher := &FeedFetcher{
