@@ -103,7 +103,7 @@ func clean(s string) string {
 			i--
 			c = string(s[i])
 		}
-		switch v := string(s[i-1]); v {
+		switch string(s[i-1]) {
 		case ".", ",":
 			return s[:i-1] + "\u2026"
 		default:
