@@ -82,7 +82,7 @@ func (self *FeedFetcher) Run(results chan FetchResult) {
 func fetchFeed(url string, results chan FetchResult) {
 	resp, err := http.Get(url)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Printf("http.Get error: %v", err)
 		return
 	}
 	if resp.StatusCode == 404 {
