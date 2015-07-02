@@ -26,6 +26,7 @@ const (
 	maxFeedItems      = 5
 	characterCount    = 280
 	pollInterval      = time.Hour
+	updatedFeedCount  = 300
 )
 
 var (
@@ -223,6 +224,10 @@ func buildRiver(c chan FetchResult) {
 		river.Metadata["whenGMT"] = time.Now().UTC().Format(utcTimestampFmt)
 		river.Metadata["whenLocal"] = time.Now().Format(localTimestampFmt)
 
+		if len(river.UpdatedFeeds.UpdatedFeed) > updatedFeedCount {
+			// We subtract one to account for the Feed that is about to be added.
+			river.UpdatedFeeds.UpdatedFeed = river.UpdatedFeeds.UpdatedFeed[:updatedFeedCount-1]
+		}
 		river.UpdatedFeeds.UpdatedFeed = append([]Feed{feed}, river.UpdatedFeeds.UpdatedFeed...)
 
 		writer.Write([]byte("onGetRiverStream("))
