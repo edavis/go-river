@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -16,6 +15,7 @@ import (
 
 	"code.google.com/p/go-charset/charset"
 	_ "code.google.com/p/go-charset/data"
+	"code.google.com/p/go-uuid/uuid"
 	"github.com/kennygrant/sanitize"
 	"gopkg.in/yaml.v2"
 )
@@ -30,7 +30,6 @@ const (
 
 var (
 	logger  = log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds)
-	counter = make(chan uint)
 	history = make(map[string]bool)
 )
 
@@ -159,7 +158,7 @@ func parseFeed(obj FetchResult) Feed {
 						Link:      item.Link,
 						Permalink: item.Permalink,
 						PubDate:   item.Timestamp(),
-						Id:        fmt.Sprintf("%07d", <-counter),
+						Id:        uuid.New(),
 					})
 				}
 			case "feed":
@@ -186,7 +185,7 @@ func parseFeed(obj FetchResult) Feed {
 						Link:      item.WebLink(),
 						Permalink: item.Id,
 						PubDate:   item.Timestamp(),
-						Id:        fmt.Sprintf("%07d", <-counter),
+						Id:        uuid.New(),
 					})
 				}
 			}
@@ -233,14 +232,6 @@ func buildRiver(c chan FetchResult, output string) {
 	}
 }
 
-func startCounter(counter chan uint) {
-	var c uint = 1
-	for {
-		counter <- c
-		c += 1
-	}
-}
-
 func loadFeedList(input *string, feeds *[]string) {
 	data, err := ioutil.ReadFile(*input)
 	if err != nil {
@@ -254,8 +245,6 @@ func main() {
 	results := make(chan FetchResult)
 	feeds := []string{}
 	rand.Seed(time.Now().UnixNano())
-
-	go startCounter(counter)
 
 	input := flag.String("input", "", "read feed URLs from this file")
 	poll := flag.Duration("poll", time.Hour, "how often to poll feeds")
@@ -281,9 +270,9 @@ func main() {
 		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, *poll)
 
 		fetcher := &FeedFetcher{
-			Poll:   *poll,
-			Delay:  time.After(delayDuration),
-			URL:    url,
+			Poll:  *poll,
+			Delay: time.After(delayDuration),
+			URL:   url,
 		}
 		go fetcher.Run(results)
 	}
