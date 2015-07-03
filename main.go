@@ -264,11 +264,11 @@ func main() {
 		var delayDuration time.Duration
 		if *quickstart {
 			delayDuration = time.Duration(0)
+			logger.Printf("%q will update now and then every %v", url, *poll)
 		} else {
 			delayDuration = time.Minute * time.Duration(rand.Intn(60))
+			logger.Printf("%q will first update in %v and every %v", url, delayDuration, *poll)
 		}
-
-		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, *poll)
 
 		fetcher := &FeedFetcher{
 			Poll:  *poll,
