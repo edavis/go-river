@@ -202,6 +202,7 @@ func buildRiver(c chan FetchResult, output string) {
 		Metadata: map[string]string{
 			"docs":    "http://riverjs.org",
 			"version": "3",
+			"secs":    "",
 		},
 	}
 	for obj := range c {
