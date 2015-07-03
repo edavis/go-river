@@ -55,7 +55,6 @@ type FeedItem struct {
 type FetchResult struct {
 	Content *xml.Decoder
 	URL     string
-	Output  string
 }
 
 type River struct {
@@ -70,7 +69,6 @@ type FeedFetcher struct {
 	Ticker <-chan time.Time
 	Delay  <-chan time.Time
 	URL    string
-	Output string
 }
 
 func (self *FeedFetcher) Run(results chan FetchResult) {
@@ -78,14 +76,14 @@ func (self *FeedFetcher) Run(results chan FetchResult) {
 		select {
 		case <-self.Delay:
 			self.Ticker = time.Tick(self.Poll)
-			fetchFeed(self.URL, results, self.Output)
+			fetchFeed(self.URL, results)
 		case <-self.Ticker:
-			fetchFeed(self.URL, results, self.Output)
+			fetchFeed(self.URL, results)
 		}
 	}
 }
 
-func fetchFeed(url string, results chan FetchResult, output string) {
+func fetchFeed(url string, results chan FetchResult) {
 	resp, err := http.Get(url)
 	if err != nil {
 		logger.Printf("http.Get error: %v", err)
@@ -97,7 +95,7 @@ func fetchFeed(url string, results chan FetchResult, output string) {
 	}
 	decoder := xml.NewDecoder(resp.Body)
 	decoder.CharsetReader = charset.NewReader // Needed for non-UTF-8 encoded feeds.
-	results <- FetchResult{decoder, url, output}
+	results <- FetchResult{decoder, url}
 }
 
 func clean(s string) string {
@@ -200,7 +198,7 @@ func parseFeed(obj FetchResult) Feed {
 	return feed
 }
 
-func buildRiver(c chan FetchResult) {
+func buildRiver(c chan FetchResult, output string) {
 	river := River{
 		Metadata: map[string]string{
 			"docs":    "http://riverjs.org",
@@ -216,7 +214,7 @@ func buildRiver(c chan FetchResult) {
 
 		logger.Printf("Updating: %v with %v new items", feed.Title, len(feed.Items))
 
-		writer, _ := os.Create(obj.Output)
+		writer, _ := os.Create(output)
 		encoder := json.NewEncoder(writer)
 
 		// Update the timestamps
@@ -257,7 +255,6 @@ func main() {
 	feeds := []string{}
 	rand.Seed(time.Now().UnixNano())
 
-	go buildRiver(results)
 	go startCounter(counter)
 
 	input := flag.String("input", "", "read feed URLs from this file")
@@ -265,6 +262,8 @@ func main() {
 	output := flag.String("output", "river.js", "write output to this file")
 	quickstart := flag.Bool("quickstart", false, "don't delay initial feed read")
 	flag.Parse()
+
+	go buildRiver(results, *output)
 
 	loadFeedList(input, &feeds)
 	logger.Printf("Loading %d feeds from %q and writing to %q", len(feeds), *input, *output)
@@ -285,7 +284,6 @@ func main() {
 			Poll:   *poll,
 			Delay:  time.After(delayDuration),
 			URL:    url,
-			Output: *output,
 		}
 		go fetcher.Run(results)
 	}
