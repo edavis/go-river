@@ -25,7 +25,6 @@ const (
 	localTimestampFmt = "Mon, 02 Jan 2006 15:04:05 MST"
 	maxFeedItems      = 5
 	characterCount    = 280
-	pollInterval      = time.Hour
 	updatedFeedCount  = 300
 )
 
@@ -67,6 +66,7 @@ type River struct {
 }
 
 type FeedFetcher struct {
+	Poll   time.Duration
 	Ticker <-chan time.Time
 	Delay  <-chan time.Time
 	URL    string
@@ -77,7 +77,7 @@ func (self *FeedFetcher) Run(results chan FetchResult) {
 	for {
 		select {
 		case <-self.Delay:
-			self.Ticker = time.Tick(pollInterval)
+			self.Ticker = time.Tick(self.Poll)
 			fetchFeed(self.URL, results, self.Output)
 		case <-self.Ticker:
 			fetchFeed(self.URL, results, self.Output)
@@ -201,7 +201,7 @@ func parseFeed(obj FetchResult) Feed {
 }
 
 func buildRiver(c chan FetchResult) {
-	var river = River{
+	river := River{
 		Metadata: map[string]string{
 			"docs":    "http://riverjs.org",
 			"version": "3",
@@ -235,51 +235,59 @@ func buildRiver(c chan FetchResult) {
 	}
 }
 
-type FeedConfig struct {
-	Output string
-	Feeds  []string
+func startCounter(counter chan uint) {
+	var c uint = 1
+	for {
+		counter <- c
+		c += 1
+	}
+}
+
+func loadFeedList(input *string, feeds *[]string) {
+	data, err := ioutil.ReadFile(*input)
+	if err != nil {
+		logger.Fatal("couldn't load feed list: %v", err)
+	}
+	yaml.Unmarshal(data, feeds)
 }
 
 func main() {
 	var wg sync.WaitGroup
 	results := make(chan FetchResult)
-
+	feeds := []string{}
 	rand.Seed(time.Now().UnixNano())
 
 	go buildRiver(results)
+	go startCounter(counter)
 
-	go func() {
-		var c uint = 1
-		for {
-			counter <- c
-			c += 1
-		}
-	}()
-
+	input := flag.String("input", "", "read feed URLs from this file")
+	poll := flag.Duration("poll", time.Hour, "how often to poll feeds")
+	output := flag.String("output", "river.js", "write output to this file")
+	quickstart := flag.Bool("quickstart", false, "don't delay initial feed read")
 	flag.Parse()
-	for _, list := range flag.Args() {
-		config := FeedConfig{
-			Output: "river.js",
-		}
-		data, err := ioutil.ReadFile(list)
-		if err != nil {
-			logger.Fatal("couldn't read feed list: %v", err)
-		}
-		yaml.Unmarshal(data, &config)
 
-		for _, url := range config.Feeds {
-			wg.Add(1)
+	loadFeedList(input, &feeds)
+	logger.Printf("Loading %d feeds from %q and writing to %q", len(feeds), *input, *output)
 
-			delayDuration := time.Minute * time.Duration(rand.Intn(60))
-			logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, pollInterval)
+	for _, url := range feeds {
+		wg.Add(1)
 
-			fetcher := &FeedFetcher{
-				Delay:  time.After(delayDuration),
-				URL:    url,
-				Output: config.Output,
-			}
-			go fetcher.Run(results)
+		var delayDuration time.Duration
+		if *quickstart {
+			delayDuration = time.Duration(0)
+		} else {
+			delayDuration = time.Minute * time.Duration(rand.Intn(60))
 		}
+
+		logger.Printf("%q will first update in %v and every %v after that", url, delayDuration, *poll)
+
+		fetcher := &FeedFetcher{
+			Poll:   *poll,
+			Delay:  time.After(delayDuration),
+			URL:    url,
+			Output: *output,
+		}
+		go fetcher.Run(results)
 	}
 
 	wg.Wait()
