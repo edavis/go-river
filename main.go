@@ -95,7 +95,7 @@ func fetchFeed(url string, results chan FetchResult, output string) {
 		logger.Printf("%q returned 404", url)
 		return
 	}
-	var decoder = xml.NewDecoder(resp.Body)
+	decoder := xml.NewDecoder(resp.Body)
 	decoder.CharsetReader = charset.NewReader // Needed for non-UTF-8 encoded feeds.
 	results <- FetchResult{decoder, url, output}
 }
@@ -211,7 +211,6 @@ func buildRiver(c chan FetchResult) {
 		feed := parseFeed(obj)
 
 		if len(feed.Items) == 0 {
-			logger.Printf("%q had no new items", obj.URL)
 			continue
 		}
 
@@ -225,8 +224,7 @@ func buildRiver(c chan FetchResult) {
 		river.Metadata["whenLocal"] = time.Now().Format(localTimestampFmt)
 
 		if len(river.UpdatedFeeds.UpdatedFeed) > updatedFeedCount {
-			// We subtract one to account for the Feed that is about to be added.
-			river.UpdatedFeeds.UpdatedFeed = river.UpdatedFeeds.UpdatedFeed[:updatedFeedCount-1]
+			river.UpdatedFeeds.UpdatedFeed = river.UpdatedFeeds.UpdatedFeed[:updatedFeedCount-2]
 		}
 		river.UpdatedFeeds.UpdatedFeed = append([]Feed{feed}, river.UpdatedFeeds.UpdatedFeed...)
 
@@ -265,7 +263,7 @@ func main() {
 		}
 		data, err := ioutil.ReadFile(list)
 		if err != nil {
-			logger.Fatal("couldn't ready feed list: %v", err)
+			logger.Fatal("couldn't read feed list: %v", err)
 		}
 		yaml.Unmarshal(data, &config)
 
