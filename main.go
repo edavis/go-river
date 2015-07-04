@@ -308,7 +308,7 @@ func main() {
 			logger.Printf("%q will update every %v", url, *poll)
 		} else {
 			delayDuration = time.Minute * time.Duration(rand.Intn(60))
-			logger.Printf("%q will first update in %v and every %v", url, delayDuration, *poll)
+			logger.Printf("%q will first update in %v and then every %v", url, delayDuration, *poll)
 		}
 
 		fetcher := &FeedFetcher{
