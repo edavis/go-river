@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -233,18 +234,58 @@ func buildRiver(c chan FetchResult, output string) {
 	}
 }
 
-func loadFeedList(input *string, feeds *[]string) {
-	data, err := ioutil.ReadFile(*input)
-	if err != nil {
-		logger.Fatal("couldn't load feed list: %v", err)
+func loadFeedList(input string) []string {
+	feeds := []string{}
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		resp, err := http.Get(input)
+		if err != nil {
+			logger.Fatal("couldn't load feed list: %v", err)
+		}
+		switch path.Ext(input) {
+		case ".opml":
+			opml := OPML{}
+			decoder := xml.NewDecoder(resp.Body)
+			decoder.CharsetReader = charset.NewReader
+			decoder.Decode(&opml)
+			for _, outline := range opml.Body.Outlines {
+				if outline.XmlUrl != "" {
+					feeds = append(feeds, outline.XmlUrl)
+				}
+			}
+		case ".txt", ".yaml":
+			data, _ := ioutil.ReadAll(resp.Body)
+			yaml.Unmarshal(data, &feeds)
+		}
+	} else {
+		switch path.Ext(input) {
+		case ".opml":
+			opml := OPML{}
+			fp, err := os.Open(input)
+			if err != nil {
+				logger.Fatal("couldn't load feed list: %v", err)
+			}
+			decoder := xml.NewDecoder(fp)
+			decoder.CharsetReader = charset.NewReader
+			decoder.Decode(&opml)
+			for _, outline := range opml.Body.Outlines {
+				if outline.XmlUrl != "" {
+					feeds = append(feeds, outline.XmlUrl)
+				}
+			}
+		case ".txt", ".yaml":
+			data, err := ioutil.ReadFile(input)
+			if err != nil {
+				logger.Fatal("couldn't load feed list: %v", err)
+			}
+			yaml.Unmarshal(data, &feeds)
+		}
 	}
-	yaml.Unmarshal(data, feeds)
+	return feeds
 }
 
 func main() {
 	var wg sync.WaitGroup
 	results := make(chan FetchResult)
-	feeds := []string{}
 	rand.Seed(time.Now().UnixNano())
 
 	input := flag.String("input", "", "read feed URLs from this file")
@@ -255,7 +296,7 @@ func main() {
 
 	go buildRiver(results, *output)
 
-	loadFeedList(input, &feeds)
+	feeds := loadFeedList(*input)
 	logger.Printf("Loading %d feeds from %q and writing to %q", len(feeds), *input, *output)
 
 	for _, url := range feeds {
@@ -264,7 +305,7 @@ func main() {
 		var delayDuration time.Duration
 		if *quickstart {
 			delayDuration = time.Duration(0)
-			logger.Printf("%q will update now and then every %v", url, *poll)
+			logger.Printf("%q will update every %v", url, *poll)
 		} else {
 			delayDuration = time.Minute * time.Duration(rand.Intn(60))
 			logger.Printf("%q will first update in %v and every %v", url, delayDuration, *poll)
