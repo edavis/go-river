@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -30,32 +31,10 @@ const (
 )
 
 var (
-	logger  = log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds)
-	history = make(map[string]bool)
+	logger      = log.New(os.Stdout, "", log.LstdFlags|log.Lmicroseconds)
+	history     = make(map[string]bool)
+	activeFeeds = make(map[string]*FeedFetcher)
 )
-
-type Feed struct {
-	URL         string     `json:"feedUrl"`
-	Website     string     `json:"websiteUrl"`
-	Title       string     `json:"feedTitle"`
-	Description string     `json:"feedDescription"`
-	LastUpdate  string     `json:"whenLastUpdate"`
-	Items       []FeedItem `json:"item"`
-}
-
-type FeedItem struct {
-	Body      string `json:"body"`
-	Permalink string `json:"permaLink"`
-	PubDate   string `json:"pubDate"`
-	Title     string `json:"title"`
-	Link      string `json:"link"`
-	Id        string `json:"id"`
-}
-
-type FetchResult struct {
-	Content *xml.Decoder
-	URL     string
-}
 
 type River struct {
 	UpdatedFeeds struct {
@@ -64,9 +43,14 @@ type River struct {
 	Metadata map[string]string `json:"metadata"`
 }
 
+type FetchResult struct {
+	Content *xml.Decoder
+	URL     string
+}
+
 type FeedFetcher struct {
 	Poll   time.Duration
-	Ticker <-chan time.Time
+	Ticker *time.Ticker
 	Delay  <-chan time.Time
 	URL    string
 }
@@ -75,9 +59,9 @@ func (self *FeedFetcher) Run(results chan FetchResult) {
 	for {
 		select {
 		case <-self.Delay:
-			self.Ticker = time.Tick(self.Poll)
+			self.Ticker = time.NewTicker(self.Poll)
 			fetchFeed(self.URL, results)
-		case <-self.Ticker:
+		case <-self.Ticker.C:
 			fetchFeed(self.URL, results)
 		}
 	}
@@ -289,6 +273,59 @@ func loadLocalFeedList(input string) []string {
 	return feeds
 }
 
+func pollFeedList(input string, feedPoll, listPoll time.Duration, results chan FetchResult) {
+	ticker := time.Tick(listPoll)
+	for {
+		select {
+		case <-ticker:
+			logger.Printf("Polling %q", input)
+
+			var feeds []string
+			if startsWith(input, "http://", "https://") {
+				feeds = loadRemoteFeedList(input)
+			} else {
+				feeds = loadLocalFeedList(input)
+			}
+
+			// Build a map of the just fetched feeds.
+			feedsMap := make(map[string]bool)
+			for _, url := range feeds {
+				feedsMap[url] = true
+			}
+
+			// First, check if any feeds have been removed
+			for url := range activeFeeds {
+				if !feedsMap[url] {
+					logger.Printf("Removing feed: %s", url)
+					fetcher := activeFeeds[url]
+					fetcher.Ticker.Stop()
+					delete(activeFeeds, url)
+				}
+			}
+
+			// Second, check if any feeds have been added
+			for _, url := range feeds {
+				// Skip if already present
+				if _, found := activeFeeds[url]; found {
+					continue
+				}
+
+				logger.Printf("Adding feed: %s", url)
+
+				t := new(time.Ticker)
+				fetcher := &FeedFetcher{
+					Poll:   feedPoll,
+					Ticker: t,
+					Delay:  time.After(time.Duration(0)), // check immediately
+					URL:    url,
+				}
+				activeFeeds[url] = fetcher
+				go fetcher.Run(results)
+			}
+		}
+	}
+}
+
 func startsWith(s string, prefixes ...string) bool {
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(s, prefix) {
@@ -303,11 +340,17 @@ func main() {
 	results := make(chan FetchResult)
 	rand.Seed(time.Now().UnixNano())
 
-	input := flag.String("input", "", "read feed URLs from this file")
+	input := flag.String("input", "", "read feed URLs from this file or URL")
 	poll := flag.Duration("poll", time.Hour, "how often to poll feeds")
+	listPoll := flag.Duration("listpoll", 15*time.Minute, "how often to check feed list for new feeds")
 	output := flag.String("output", "river.js", "write output to this file")
-	quickstart := flag.Bool("quickstart", false, "don't delay initial feed read")
+	quickstart := flag.Bool("quickstart", false, "when true, don't space out initial feed reads")
 	flag.Parse()
+
+	if *input == "" {
+		fmt.Println("no -input given, exiting...")
+		return
+	}
 
 	go buildRiver(results, *output)
 
@@ -317,11 +360,17 @@ func main() {
 	} else {
 		feeds = loadLocalFeedList(*input)
 	}
+	go pollFeedList(*input, *poll, *listPoll, results)
 
 	logger.Printf("Loading %d feeds from %q and writing to %q", len(feeds), *input, *output)
 
 	for _, url := range feeds {
 		wg.Add(1)
+
+		if _, found := activeFeeds[url]; found {
+			logger.Printf("%q already added, skipping", url)
+			continue
+		}
 
 		var delayDuration time.Duration
 		if *quickstart {
@@ -332,11 +381,14 @@ func main() {
 			logger.Printf("%q will first update in %v and then every %v", url, delayDuration, *poll)
 		}
 
+		t := new(time.Ticker)
 		fetcher := &FeedFetcher{
-			Poll:  *poll,
-			Delay: time.After(delayDuration),
-			URL:   url,
+			Poll:   *poll,
+			Ticker: t,
+			Delay:  time.After(delayDuration),
+			URL:    url,
 		}
+		activeFeeds[url] = fetcher
 		go fetcher.Run(results)
 	}
 
