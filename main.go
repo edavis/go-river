@@ -234,53 +234,68 @@ func buildRiver(c chan FetchResult, output string) {
 	}
 }
 
-func loadFeedList(input string) []string {
+func loadRemoteFeedList(input string) []string {
 	feeds := []string{}
-	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+	switch path.Ext(input) {
+	case ".opml":
+		opml := OPML{}
 		resp, err := http.Get(input)
 		if err != nil {
 			logger.Fatal("couldn't load feed list: %v", err)
 		}
-		switch path.Ext(input) {
-		case ".opml":
-			opml := OPML{}
-			decoder := xml.NewDecoder(resp.Body)
-			decoder.CharsetReader = charset.NewReader
-			decoder.Decode(&opml)
-			for _, outline := range opml.Body.Outlines {
-				if outline.XmlUrl != "" {
-					feeds = append(feeds, outline.XmlUrl)
-				}
+		decoder := xml.NewDecoder(resp.Body)
+		decoder.CharsetReader = charset.NewReader
+		decoder.Decode(&opml)
+		for _, outline := range opml.Body.Outlines {
+			if outline.XmlUrl != "" {
+				feeds = append(feeds, outline.XmlUrl)
 			}
-		case ".txt", ".yaml":
-			data, _ := ioutil.ReadAll(resp.Body)
-			yaml.Unmarshal(data, &feeds)
 		}
-	} else {
-		switch path.Ext(input) {
-		case ".opml":
-			opml := OPML{}
-			fp, err := os.Open(input)
-			if err != nil {
-				logger.Fatal("couldn't load feed list: %v", err)
-			}
-			decoder := xml.NewDecoder(fp)
-			decoder.CharsetReader = charset.NewReader
-			decoder.Decode(&opml)
-			for _, outline := range opml.Body.Outlines {
-				if outline.XmlUrl != "" {
-					feeds = append(feeds, outline.XmlUrl)
-				}
-			}
-		case ".txt", ".yaml":
-			data, err := ioutil.ReadFile(input)
-			if err != nil {
-				logger.Fatal("couldn't load feed list: %v", err)
-			}
-			yaml.Unmarshal(data, &feeds)
+	case ".txt", ".yaml":
+		resp, err := http.Get(input)
+		if err != nil {
+			logger.Fatal("couldn't load feed list: %v", err)
 		}
+		data, _ := ioutil.ReadAll(resp.Body)
+		yaml.Unmarshal(data, &feeds)
 	}
 	return feeds
+}
+
+func loadLocalFeedList(input string) []string {
+	feeds := []string{}
+	switch path.Ext(input) {
+	case ".opml":
+		opml := OPML{}
+		fp, err := os.Open(input)
+		if err != nil {
+			logger.Fatal("couldn't load feed list: %v", err)
+		}
+		decoder := xml.NewDecoder(fp)
+		decoder.CharsetReader = charset.NewReader
+		decoder.Decode(&opml)
+		for _, outline := range opml.Body.Outlines {
+			if outline.XmlUrl != "" {
+				feeds = append(feeds, outline.XmlUrl)
+			}
+		}
+	case ".txt", ".yaml":
+		data, err := ioutil.ReadFile(input)
+		if err != nil {
+			logger.Fatal("couldn't load feed list: %v", err)
+		}
+		yaml.Unmarshal(data, &feeds)
+	}
+	return feeds
+}
+
+func startsWith(s string, prefixes ...string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func main() {
@@ -296,7 +311,13 @@ func main() {
 
 	go buildRiver(results, *output)
 
-	feeds := loadFeedList(*input)
+	var feeds []string
+	if startsWith(*input, "http://", "https://") {
+		feeds = loadRemoteFeedList(*input)
+	} else {
+		feeds = loadLocalFeedList(*input)
+	}
+
 	logger.Printf("Loading %d feeds from %q and writing to %q", len(feeds), *input, *output)
 
 	for _, url := range feeds {
