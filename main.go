@@ -206,10 +206,11 @@ func buildRiver(c chan FetchResult, output string) {
 		river.Metadata["whenGMT"] = time.Now().UTC().Format(utcTimestampFmt)
 		river.Metadata["whenLocal"] = time.Now().Format(localTimestampFmt)
 
-		if len(river.UpdatedFeeds.UpdatedFeed) > updatedFeedCount {
-			river.UpdatedFeeds.UpdatedFeed = river.UpdatedFeeds.UpdatedFeed[:updatedFeedCount-2]
-		}
 		river.UpdatedFeeds.UpdatedFeed = append([]Feed{feed}, river.UpdatedFeeds.UpdatedFeed...)
+
+		if len(river.UpdatedFeeds.UpdatedFeed) > updatedFeedCount {
+			river.UpdatedFeeds.UpdatedFeed = river.UpdatedFeeds.UpdatedFeed[:updatedFeedCount]
+		}
 
 		writer.Write([]byte("onGetRiverStream("))
 		encoder.Encode(river)
